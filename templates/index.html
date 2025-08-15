@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>数字個数変更可能な連結線描画-Flask連携</title>
+  <meta name="viewport" content="width=350, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    .square-canvas-container {
+      width: 350px;
+      height: 350px;
+      position: relative;
+      background: #f8f9fa;
+      margin: 30px auto 10px;
+      border: 2px solid #888;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+    #result-seq {
+      min-height: 34px;
+      text-align: center;
+      font-size: 1.5rem;
+      margin-top: 6px;
+    }
+    #cross-message {
+      min-height: 34px;
+      text-align: center;
+      color: #d32f2f;
+      font-size: 1.2rem;
+      margin-top: 2px;
+    }
+    #reset-btn {
+      display: block;
+      margin: 8px auto 10px auto;
+    }
+    #settings {
+      max-width: 350px;
+      margin: 20px auto 0 auto;
+      text-align: center;
+    }
+    #settings input {
+      width: 60px;
+      display: inline-block;
+      margin-right: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h3 class="text-center mt-3">数字個数変更可能な連結線描画-Flask連携</h3>
+
+    <div id="settings">
+      <label for="numInput">数字の個数 (2〜10): </label>
+      <input type="number" id="numInput" min="2" max="10" value="4" />
+      <button class="btn btn-primary btn-sm" id="generate-btn">再生成</button>
+    </div>
+
+    <button class="btn btn-secondary mb-2" id="reset-btn">リセット</button>
+
+    <div class="square-canvas-container" id="canvas-container">
+      <canvas id="draw-canvas" width="350" height="350"></canvas>
+    </div>
+    <div id="result-seq"></div>
+    <div id="cross-message"></div>
+  </div>
+  <script>
+    const canvas = document.getElementById("draw-canvas");
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width,
+      h = canvas.height;
+    const circleRadius = 20;
+
+    let circles = [];
+    let passedNumbers = [];
+    let linesById = {};
+    let currentLineId = 0;
+
+    let drawing = false;
+    let lastX = 0,
+      lastY = 0;
+    let crossDetected = false;
+
+    let numDigits = 4; // デフォルト数字の個数
+
+    function randomPos(margin = 40) {
+      return {
+        x: Math.floor(Math.random() * (w - 2 * margin) + margin),
+        y: Math.floor(Math.random() * (h - 2 * margin) + margin),
+      };
+    }
+    // 指定された個数で円と数字を配置
+    function setRandomCircles(count) {
+      circles = [];
+      let tries = 0;
+      for (let i = 1; i <= count; i++) {
+        let pos;
+        let good = false;
+        while (!good && tries < 500) {
+          pos = randomPos();
+          good = true;
+          for (const c of circles) {
+            let dx = c.x - pos.x,
+              dy = c.y - pos.y;
+            if (Math.hypot(dx, dy) < circleRadius * 2.5) good = false;
+          }
+          tries++;
+        }
+        circles.push({ x: pos.x, y: pos.y, num: i, hit: false });
+      }
+    }
+
+    function ccw(ax, ay, bx, by, cx, cy) {
+      return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax);
+    }
+
+    function isCross(a1, a2, b1, b2) {
+      return (
+        ccw(a1.x, a1.y, b1.x, b1.y, b2.x, b2.y) !==
+          ccw(a2.x, a2.y, b1.x, b1.y, b2.x, b2.y) &&
+        ccw(a1.x, a1.y, a2.x, a2.y, b1.x, b1.y) !==
+          ccw(a1.x, a1.y, a2.x, a2.y, b2.x, b2.y)
+      );
+    }
+
+    function lineIntersectsCircle(x1, y1, x2, y2, cx, cy, r) {
+      let dx = x2 - x1,
+        dy = y2 - y1;
+      let fx = x1 - cx,
+        fy = y1 - cy;
+      let a = dx * dx + dy * dy;
+      let b = 2 * (fx * dx + fy * dy);
+      let c = fx * fx + fy * fy - r * r;
+      let discriminant = b * b - 4 * a * c;
+      if (discriminant < 0) return false;
+      discriminant = Math.sqrt(discriminant);
+      let t1 = (-b - discriminant) / (2 * a);
+      let t2 = (-b + discriminant) / (2 * a);
+      return (t1 >= 0 && t1 <= 1) || (t2 >= 0 && t2 <= 1);
+    }
+
+    function showPassed() {
+      document.getElementById("result-seq").textContent = passedNumbers.join(" ");
+    }
+    function showCrossMsg(msg) {
+      document.getElementById("cross-message").textContent = msg || "";
+    }
+
+    function drawAllCanvas() {
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = "#2196f3";
+      ctx.lineWidth = 3;
+      for (const lineId in linesById) {
+        for (const seg of linesById[lineId]) {
+          ctx.beginPath();
+          ctx.moveTo(seg.x1, seg.y1);
+          ctx.lineTo(seg.x2, seg.y2);
+          ctx.stroke();
+        }
+      }
+      for (let c of circles) {
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, circleRadius, 0, Math.PI * 2);
+        ctx.fillStyle = c.hit ? "#43a047" : "#e53935";
+        ctx.globalAlpha = 0.6;
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+        ctx.strokeStyle = "#333";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 1.7rem sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(c.num, c.x, c.y);
+      }
+    }
+
+    function isInsideAnyCircle(x, y) {
+      for (const c of circles) {
+        const dx = x - c.x,
+          dy = y - c.y;
+        if (Math.hypot(dx, dy) <= circleRadius) return true;
+      }
+      return false;
+    }
+
+    function startNewLine() {
+      currentLineId++;
+      if (!linesById[currentLineId]) {
+        linesById[currentLineId] = [];
+      }
+    }
+
+    let currentDrawingLineId = 0;
+
+    // 現在通過すべき数字のインデックス（1スタート）
+    let expectedNextNum = 1;
+
+    // POST送信関数
+    async function sendResult(imageDataURL, successBool){
+      const formData = new FormData();
+      formData.append("image", imageDataURL);
+      formData.append("success", successBool ? "true" : "false");
+      try {
+        await fetch("/upload_result", {
+          method: "POST",
+          body: formData
+        });
+      } catch(e) {
+        console.error("送信エラー:", e);
+      }
+    }
+
+    // 数字通過判定＆成功・失敗判定を兼ねる
+    function checkCircleHitAndManageLine(x1, y1, x2, y2) {
+      for (const c of circles) {
+        if (!c.hit && lineIntersectsCircle(x1, y1, x2, y2, c.x, c.y, circleRadius)) {
+          if (c.num === expectedNextNum) {
+            c.hit = true;
+            passedNumbers.push(c.num);
+            expectedNextNum++;
+            drawAllCanvas();
+            showPassed();
+
+            currentDrawingLineId = currentLineId + 1;
+            if (!linesById[currentDrawingLineId]) {
+              linesById[currentDrawingLineId] = [];
+            }
+            currentLineId++;
+
+            if (passedNumbers.length === numDigits) {
+              sendResult(canvas.toDataURL("image/png"), true);
+              drawing = false; // 描画禁止
+              crossDetected = true;
+            }
+          } else {
+            crossDetected = true;
+            showCrossMsg("数字の順番が違います！");
+            drawing = false; // 描画禁止
+            sendResult(canvas.toDataURL("image/png"), false);
+          }
+          return;
+        }
+      }
+      if (currentDrawingLineId === 0) {
+        startNewLine();
+        currentDrawingLineId = currentLineId;
+      }
+    }
+
+    function checkLineCross(x1, y1, x2, y2) {
+      if (crossDetected) return;
+      if (isInsideAnyCircle(x1, y1) || isInsideAnyCircle(x2, y2)) return;
+      for (const idStr in linesById) {
+        const id = parseInt(idStr);
+        if (id === currentDrawingLineId) continue;
+        for (const seg of linesById[id]) {
+          if (
+            isCross(
+              { x: x1, y: y1 },
+              { x: x2, y: y2 },
+              { x: seg.x1, y: seg.y1 },
+              { x: seg.x2, y: seg.y2 }
+            )
+          ) {
+            crossDetected = true;
+            showCrossMsg("線が交差しました！");
+            drawing = false; // 描画禁止
+            sendResult(canvas.toDataURL("image/png"), false);
+            return;
+          }
+        }
+      }
+    }
+
+    function getXY(e) {
+      const rect = canvas.getBoundingClientRect();
+      if (e.touches) {
+        return { x: e.touches[0].clientX - rect.left, y: e.touches.clientY - rect.top };
+      } else {
+        return { x: e.offsetX, y: e.offsetY };
+      }
+    }
+
+    canvas.addEventListener("mousedown", (e) => {
+      if (crossDetected) return; // 判定後は描画禁止
+      drawing = true;
+      const pos = getXY(e);
+      lastX = pos.x;
+      lastY = pos.y;
+    });
+    canvas.addEventListener("mousemove", (e) => {
+      if (!drawing) return;
+      const pos = getXY(e);
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.strokeStyle = "#2196f3";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      checkCircleHitAndManageLine(lastX, lastY, pos.x, pos.y);
+      checkLineCross(lastX, lastY, pos.x, pos.y);
+
+      if (!linesById[currentDrawingLineId]) {
+        linesById[currentDrawingLineId] = [];
+      }
+      linesById[currentDrawingLineId].push({ x1: lastX, y1: lastY, x2: pos.x, y2: pos.y });
+
+      lastX = pos.x;
+      lastY = pos.y;
+    });
+    canvas.addEventListener("mouseup", () => (drawing = false));
+    canvas.addEventListener("mouseleave", () => (drawing = false));
+
+    canvas.addEventListener("touchstart", (e) => {
+      if (crossDetected) return; // 判定後は描画禁止
+      drawing = true;
+      const pos = getXY(e);
+      lastX = pos.x;
+      lastY = pos.y;
+    });
+    canvas.addEventListener("touchmove", (e) => {
+      if (!drawing) return;
+      e.preventDefault();
+      const pos = getXY(e);
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.strokeStyle = "#2196f3";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      checkCircleHitAndManageLine(lastX, lastY, pos.x, pos.y);
+      checkLineCross(lastX, lastY, pos.x, pos.y);
+
+      if (!linesById[currentDrawingLineId]) {
+        linesById[currentDrawingLineId] = [];
+      }
+      linesById[currentDrawingLineId].push({ x1: lastX, y1: lastY, x2: pos.x, y2: pos.y });
+
+      lastX = pos.x;
+      lastY = pos.y;
+    });
+    canvas.addEventListener("touchend", () => (drawing = false));
+
+    document.getElementById("reset-btn").addEventListener("click", () => {
+      resetCanvas();
+    });
+
+    document.getElementById("generate-btn").addEventListener("click", () => {
+      let val = parseInt(document.getElementById("numInput").value, 10);
+      if (isNaN(val) || val < 2) val = 2;
+      if (val > 10) val = 10;
+      numDigits = val;
+      resetCanvas();
+    });
+
+    function resetCanvas() {
+      setRandomCircles(numDigits);
+      linesById = {};
+      passedNumbers = [];
+      crossDetected = false;
+      currentLineId = 0;
+      currentDrawingLineId = 0;
+      expectedNextNum = 1;
+      drawing = false; // 描画許可状態に戻す
+      drawAllCanvas();
+      showPassed();
+      showCrossMsg("");
+    }
+
+    // 初期化
+    resetCanvas();
+  </script>
+</body>
+</html>
