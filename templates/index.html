@@ -282,17 +282,27 @@
 
     function getXY(e) {
   const rect = canvas.getBoundingClientRect();
-  if (e.touches) {
+  // Touch events carry a TouchList; use the first touch point.
+  if (e.touches && e.touches.length > 0) {
+    const t = e.touches[0];
     return {
-      x: e.touches.clientX - rect.left,
-      y: e.touches.clientY - rect.top
-    };
-  } else {
-    return {
-      x: e.offsetX,
-      y: e.offsetY
+      x: t.clientX - rect.left,
+      y: t.clientY - rect.top
     };
   }
+  // For touchend events, touches may be empty; fall back to changedTouches.
+  if (e.changedTouches && e.changedTouches.length > 0) {
+    const t = e.changedTouches[0];
+    return {
+      x: t.clientX - rect.left,
+      y: t.clientY - rect.top
+    };
+  }
+  // Mouse events: offsetX/offsetY are relative to the target element.
+  return {
+    x: e.offsetX,
+    y: e.offsetY
+  };
 }
 
     canvas.addEventListener("mousedown", (e) => {
@@ -326,15 +336,18 @@
     canvas.addEventListener("mouseup", () => (drawing = false));
     canvas.addEventListener("mouseleave", () => (drawing = false));
 
+    // Use non-passive touch listeners so we can call preventDefault() inside touchmove.
     canvas.addEventListener("touchstart", (e) => {
       if (crossDetected) return; // 判定後は描画禁止
       drawing = true;
       const pos = getXY(e);
       lastX = pos.x;
       lastY = pos.y;
-    });
+    }, { passive: true });
+
     canvas.addEventListener("touchmove", (e) => {
       if (!drawing) return;
+      // preventDefault to avoid scrolling while drawing
       e.preventDefault();
       const pos = getXY(e);
       ctx.beginPath();
@@ -354,8 +367,12 @@
 
       lastX = pos.x;
       lastY = pos.y;
+    }, { passive: false });
+
+    canvas.addEventListener("touchend", (e) => {
+      // On touchend there may be no touches; we still want to stop drawing.
+      drawing = false;
     });
-    canvas.addEventListener("touchend", () => (drawing = false));
 
     document.getElementById("reset-btn").addEventListener("click", () => {
       resetCanvas();
