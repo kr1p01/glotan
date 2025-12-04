@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
   <meta charset="UTF-8" />
   <title>数字個数変更可能な連結線描画-Flask連携</title>
@@ -14,6 +15,7 @@
       margin: 30px auto 10px;
       border: 2px solid #888;
     }
+
     canvas {
       position: absolute;
       top: 0;
@@ -22,12 +24,14 @@
       height: 100%;
       touch-action: none;
     }
+
     #result-seq {
       min-height: 34px;
       text-align: center;
       font-size: 1.5rem;
       margin-top: 6px;
     }
+
     #cross-message {
       min-height: 34px;
       text-align: center;
@@ -35,15 +39,18 @@
       font-size: 1.2rem;
       margin-top: 2px;
     }
+
     #reset-btn {
       display: block;
       margin: 8px auto 10px auto;
     }
+
     #settings {
       max-width: 350px;
       margin: 20px auto 0 auto;
       text-align: center;
     }
+
     #settings input {
       width: 60px;
       display: inline-block;
@@ -51,6 +58,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <h3 class="text-center mt-3">数字個数変更可能な連結線描画-Flask連携</h3>
@@ -76,6 +84,9 @@
       h = canvas.height;
     const circleRadius = 20;
 
+
+
+    let drawable = true;
     let circles = [];
     let passedNumbers = [];
     let linesById = {};
@@ -122,9 +133,9 @@
     function isCross(a1, a2, b1, b2) {
       return (
         ccw(a1.x, a1.y, b1.x, b1.y, b2.x, b2.y) !==
-          ccw(a2.x, a2.y, b1.x, b1.y, b2.x, b2.y) &&
+        ccw(a2.x, a2.y, b1.x, b1.y, b2.x, b2.y) &&
         ccw(a1.x, a1.y, a2.x, a2.y, b1.x, b1.y) !==
-          ccw(a1.x, a1.y, a2.x, a2.y, b2.x, b2.y)
+        ccw(a1.x, a1.y, a2.x, a2.y, b2.x, b2.y)
       );
     }
 
@@ -204,7 +215,7 @@
     let expectedNextNum = 1;
 
     // POST送信関数
-    async function sendResult(imageDataURL, successBool){
+    async function sendResult(imageDataURL, successBool) {
       const formData = new FormData();
       formData.append("image", imageDataURL);
       formData.append("success", successBool ? "true" : "false");
@@ -213,7 +224,7 @@
           method: "POST",
           body: formData
         });
-      } catch(e) {
+      } catch (e) {
         console.error("送信エラー:", e);
       }
     }
@@ -272,6 +283,7 @@
           ) {
             crossDetected = true;
             showCrossMsg("線が交差しました！");
+
             drawing = false; // 描画禁止
             sendResult(canvas.toDataURL("image/png"), false);
             return;
@@ -281,36 +293,44 @@
     }
 
     function getXY(e) {
-  const rect = canvas.getBoundingClientRect();
-  // Touch events carry a TouchList; use the first touch point.
-  if (e.touches && e.touches.length > 0) {
-    const t = e.touches[0];
-    return {
-      x: t.clientX - rect.left,
-      y: t.clientY - rect.top
-    };
-  }
-  // For touchend events, touches may be empty; fall back to changedTouches.
-  if (e.changedTouches && e.changedTouches.length > 0) {
-    const t = e.changedTouches[0];
-    return {
-      x: t.clientX - rect.left,
-      y: t.clientY - rect.top
-    };
-  }
-  // Mouse events: offsetX/offsetY are relative to the target element.
-  return {
-    x: e.offsetX,
-    y: e.offsetY
-  };
-}
+
+      const rect = canvas.getBoundingClientRect();
+      // Touch events carry a TouchList; use the first touch point.
+      if (e.touches && e.touches.length > 0) {
+        const t = e.touches[0];
+        return {
+          x: t.clientX - rect.left,
+          y: t.clientY - rect.top
+        };
+      }
+      // For touchend events, touches may be empty; fall back to changedTouches.
+      if (e.changedTouches && e.changedTouches.length > 0) {
+        const t = e.changedTouches[0];
+        return {
+          x: t.clientX - rect.left,
+          y: t.clientY - rect.top
+        };
+      }
+      // Mouse events: offsetX/offsetY are relative to the target element.
+      return {
+        x: e.offsetX,
+        y: e.offsetY
+      };
+    }
 
     canvas.addEventListener("mousedown", (e) => {
+      if (!drawable) {
+        drawing = false;
+        showCrossMsg("長押しが離れました！");
+        return;
+      } // 描画禁止
       if (crossDetected) return; // 判定後は描画禁止
+      console.log("mousedown");
       drawing = true;
       const pos = getXY(e);
       lastX = pos.x;
       lastY = pos.y;
+      drawable = false;
     });
     canvas.addEventListener("mousemove", (e) => {
       if (!drawing) return;
@@ -338,11 +358,17 @@
 
     // Use non-passive touch listeners so we can call preventDefault() inside touchmove.
     canvas.addEventListener("touchstart", (e) => {
+      if (drawable === false) {
+        drawing = false;
+        showCrossMsg("長押しが離れました！");
+        return;
+      } // 描画禁止
       if (crossDetected) return; // 判定後は描画禁止
       drawing = true;
       const pos = getXY(e);
       lastX = pos.x;
       lastY = pos.y;
+      drawable = false;
     }, { passive: true });
 
     canvas.addEventListener("touchmove", (e) => {
@@ -376,6 +402,7 @@
 
     document.getElementById("reset-btn").addEventListener("click", () => {
       resetCanvas();
+      drawable = true;
     });
 
     document.getElementById("generate-btn").addEventListener("click", () => {
@@ -404,4 +431,5 @@
     resetCanvas();
   </script>
 </body>
+
 </html>
