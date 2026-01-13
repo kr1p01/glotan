@@ -61,7 +61,7 @@
 
 <body>
   <div class="container">
-    <h3 class="text-center mt-3">数字個数変更可能な連結線描画-Flask連携</h3>
+    <h3 class="text-center mt-3">一筆書き数字連結テスト</h3>
 
     <div id="settings">
       <label for="numInput">数字の個数 (2〜10): </label>
@@ -411,6 +411,7 @@
       if (val > 10) val = 10;
       numDigits = val;
       resetCanvas();
+      drawable = true;
     });
 
     function resetCanvas() {
